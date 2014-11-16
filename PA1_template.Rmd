@@ -1,8 +1,9 @@
 ---
+title: 'Reproducible Research: Peer Assessment 1'
+author: "Fabio Amaral"
+date: "16 November 2014"
 output: html_document
 ---
-Reproducible Research: Peer Assessment 1
-========================================================
 
 
 ## Introduction
