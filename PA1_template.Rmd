@@ -1,25 +1,488 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+output: html_document
 ---
+Reproducible Research: Peer Assessment 1
+========================================================
 
 
-## Loading and preprocessing the data
+## Introduction
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a [Fitbit](http://www.fitbit.com/), [Nike Fuelband](http://www.nike.com/us/en_us/c/nikeplus-fuelband), or [Jawbone Up](https://jawbone.com/up). These type of devices are part of the "quantified self" movement -- a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day. The **goal of this assignment** is to use this data set to perform a basic exploratory data analysis to assess the individual's activity patterns.
 
 
+## Data
 
-## What is mean total number of steps taken per day?
+The dataset for this assignment can be downloaded from the course web site [Activity monitoring data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip) [52K] or via the [GitHub repository](http://github.com/rdpeng/RepData_PeerAssessment1) created for this assignment.
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+The **variables** included in this dataset are:
+
+1. Column 1 - `steps`: Number of steps taken in a 5-minute interval (missing values are coded as `NA`)
+
+2. Column 2 - `date`: The date on which the measurement was taken in `YYYY-MM-DD` format
+
+3. Column 3 - `interval`: Identifier for the 5-minute interval in which measurement was taken.
+
+##1. Loading in and preprocessing data
+
+### 1.1. Objectives
+Show any code that is needed to:
+
+1. Load the data (i.e. `read.csv()`)
+
+2. Process/transform the data (if necessary) into a format suitable for your analysis
 
 
+### 1.2. Download and Load Dataset
+For completeness and to ensure reproducibility we will download the data set programatically. The code bellow **downloads**, **unzips** and **loads** the `activity.csv` file from the course web site if it is not yet present in the data file in the working directory. The data frame is assigned to a variable called `activity`.
 
-## What is the average daily activity pattern?
+```{r}
+#Verify if activity.csv file already exixts in data directory and download and 
+#unzip it otherwise.
+if (!file.exists("data/activity.csv")) {
+        if (!file.exists("data")) {
+                message("Creating data directory...")
+                dir.create("data")
+                }
+       fileURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+       zipfile <- "activity.zip"
+       message("Downloading data...")
+       download.file(fileURL, destfile=zipfile, method="curl")
+       unzip(zipfile, exdir="data")
+       }
+#Load the csv file and assign it to a variable
+activity <- read.csv("data/activity.csv", stringsAsFactors = FALSE)
+```
+
+###1.3. Exploring the variables
+Bellow we can have an overview of this data frame.
+```{r}
+str(activity)
+```
+Note that `date` is represented as `character` in the the format `YYY-MM-DD`. 
+```{r}
+summary(activity)
+library(data.table)
+data.table(activity)
+```
+Another important observation is that the variable `interval` is merely an `period identifier` represented as `integer` and it does not correspond to the expected value of cumulative adition of 5 minutes time per interval all the way through the 61 days (2012-10-01 to 2012-11-30). Each day has `288` 5-minutes intervals (`24hs * 60 = 1440 minutes, 1440/5 = 288`). However in this dataset the 24 hour interval goes from `0` to `2355`. 
+
+```{r}
+activity$interval[1:600]
+```
+
+This discrepancy can be explained by the *jumps* in the `interval` label every end of hour period (`55` to `100`, `155 to 200`, `255` to `300` and so forth). This can be confirmed by the code bellow. If we count the number of unique `interval` values it matches the expected `288` 5-minutes intervals in a 24 hour period
+. This *jumps* after every `55` minutes to the next centimal actually represent one `hour` complete. In this way the interval `55` = 55M, `100` = 1H 00M, `155` = 1H 55M, `200` = 2H 00M, ...
+```{r}
+length(unique(activity$interval))
+```
+Furthermore each `interval` label `0:2355` is repeated `61` times as we would expect by the number of days represented in this data set.
+```{r}
+table(activity$interval)
+```
+
+Therefore we will process the variable `date` to a proper date class and use the `interval` variable to create a time variable to facilitate the evaluation of the time past and make them more useful for further analysis.
+
+###1.4. Data set processing
+
+####1.4.1. Convert date variable to a proper date class 
+The `date` variable was converted to `POSIXct` `POSIXt`.
+```{r}
+library(lubridate)
+#The lubridate ymd function formats the date aproprietly
+activity$date <- ymd(activity$date)
+class(activity$date)
+```
+
+####1.4.2. Create a time variable column
+The value of `interval` is formated and converted to proper time `periods` and then to `time` and asigned to a new column `time`.
+```{r}
+#Format interval values with formatC and convert to period (with lubridate hm) 
+#and then to "POSIXct" "POSIXt" 
+activity$time <- as.POSIXct(hm(formatC(
+                                activity$interval / 100, 2, format='f')),
+                                format='%H:%M:%S', 
+                                origin = activity$date[1], 
+                                tz='GMT')
+
+class(activity$time)
+```
+
+####1.4.3. Create a weekday column
+Part of the assigment will be to assess differences in activity between days of the week. Therefore a weekday column was created to assist this analysis
+```{r}
+activity$weekday <- wday(activity$date, label=TRUE,abbr=TRUE)
+str(activity$weekday)
+```
+
+####1.4.4. Browse the processed data set
+Now we can double check the data set to make sure everything is how we would like it to be, with the variables in their correct form.
+```{r}
+str(activity)
+summary(activity)
+data.table(activity)
+```
+
+## 2. Question 1: What is the mean total number of steps taken per day?
+
+### 2.1. Objectives
+
+For this part of the assignment, we can **ignore the missing values** in the dataset.
+
+1. Make a `histogram` of the total number of steps taken each day
+
+2. Calculate and report the `mean` and `median` total number of steps taken per day
+
+### 2.2 Calculate the total number of steps per day and assign it to a variable
+```{r}
+#Compute the total number of steps per day and assign it to an object
+TotalDailySteps <- aggregate(steps ~ date, data = activity, FUN = sum)
+```
+The total number of steps per day are the following:
+```{r}
+head(TotalDailySteps)
+tail(TotalDailySteps)
+``` 
+
+### 2.3 Calculate the summary statistics of the total number of steps taken per day
+```{r}
+# Calculate summary statistics
+summary(TotalDailySteps)
+```
+
+**Objective 2***: The values of the `mean` (**10766 steps**) and the `median` (**10765 steps**) are almost identical. This is an indicative that the variability of the number of daily steps taken in this period of `61 days` follow a nearly `normal distribution`. This prediction can be verified by figure 1b below. 
+
+### 2.4. Plot histograms to view the data
+**Objective 1**
+```{r fig.width=15, fig.height=10, echo=TRUE }
+with(TotalDailySteps, {
+    
+        #Setup plotting space.
+        par(mfrow=c(2,1),mar=c(6.75,6.75,0.75,0), mgp=c(5.75,0.75,0), las=2)
+    
+        barplot( #plot total steps per day
+                height=steps,
+                main="Figure 1a.: Total Steps Taken Each Individual Day",
+                ylab="Steps per Day",
+                names.arg=TotalDailySteps$date,
+                col="steelblue",
+                space=c(0)
+        )
+        
+        par(mar=c(6.75,6.75,3,0), mgp=c(5.5,2,0),las=1)
+        
+        hist(  #plot the distribution of total steps
+                x = steps,
+                xlim=c(0,25000),
+                ylim=c(0, 0.0002),
+                prob=TRUE,
+                main = "Figure 1b.: Density Distribution of Total Steps per Day", 
+                xlab= "Count of Total Steps per Day", 
+                col="steelblue", 
+                breaks = 30
+        )
+       
+        #Assign mean and median values to variables to be used in the abline of plot 2
+        mean.steps <- round(mean(TotalDailySteps$steps),0) # Mean
+        median.steps <- quantile(x = TotalDailySteps$steps, probs = 0.5)  # Median, 50%Q
+        
+        # Add median and mean lines and their legends
+        abline(v=median.steps, col="lawngreen", lwd=6)
+        abline(v=mean.steps, lty = 2, col="red", lwd=3)
+        legend("topright", 
+               c("Median","Mean"),
+               pch=c(16,16), 
+               col=c("lawngreen","red"),
+               cex=1.5
+               )
+
+        #Add rug
+        rug(TotalDailySteps$steps)
+        
+        #Add values of mean, sd and median
+        mtext(paste(
+                "mean ", round(mean(TotalDailySteps$steps),0), 
+                "; sd ", round(sd(TotalDailySteps$steps),1), 
+                "; median ", quantile(x = TotalDailySteps$steps, probs = 0.5),
+                sep=""), 
+                side=1, 
+                cex=.75)
+        
+        #Add a normal distribution line
+        x <- TotalDailySteps$steps 
+        curve(dnorm(
+                x,
+                mean=mean(TotalDailySteps$steps), 
+                sd=sd(TotalDailySteps$steps)), 
+                add=TRUE,
+                col="black", 
+                lty="dotted", 
+                xaxt="n")
+
+})
+```
+
+##3. Question 2: What is the average daily activity pattern?
+
+### 3.1. Objectives
+1. Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+### 3.2. Time series plot for the average five minute interval at a 95% confidence interval
+**Objective 1**: Let’s take a look at a time series plot for the mean steps across the 5 minutes intervals of the averaged day.
+```{r fig.width=15, fig.height=7,echo=TRUE }
+library(ggplot2)
+library(scales)
+
+# Function to calculate de mean and normal 
+# 95% confidence interval around it
+mean_ci <- function(data){
+    m <- mean(data)
+    data.frame(y=m,
+               ymin = m-(1.96*sd(data)/sqrt(length(data))),
+               ymax = m+(1.96*sd(data)/sqrt(length(data))))
+}
+
+# Plot the average number of steps per interval.
+steps.period <- qplot(x=time, y=steps, data=subset(activity, complete.cases(activity)),
+                        geom='smooth', stat='summary', fun.data=mean_ci) +
+                        labs(title= "Figure 2.: Average of steps taken in each 5 min interval across the days\n (Blue line represets the average step taken and the grey shaded area the 95% confidence interval)",
+                        y='Average steps per interval', x='Time of day (61 days)') +
+                        scale_x_datetime(labels=date_format(format='%H:%M'))
+steps.period
+```
+
+### 3.2. Calculate the mean steps for each five minute interval, and assign to a new data frame.
+```{r}
+time.activity <- tapply(activity$steps, activity$time, mean, na.rm=TRUE)
+daily.pattern <- data.frame(time=as.POSIXct(names(time.activity)),
+                            time.activity=time.activity)
+```
+Which **five minute interval** has the highest mean number of steps?
+```{r}
+highest <- which.max(daily.pattern$time.activity)
+format(daily.pattern[highest,"time"], format='%H:%M')
+```
+The **maximum mean total steps** in this interval was:
+```{r}
+daily.pattern[[highest,"time.activity"]]
+```
+**Objective 2**: The 5 minutes period between **8:30** and **8:35** has on average the maximum number of steps over the 61 days analysed, with a step count over **206**.
+
+##4. Imputing missing values
+
+### 4.1. Objectives
+Note that there are a number of days/intervals where there are missing values (coded as `NA`). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+1. Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with `NA`s)
+
+2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+4. Make a histogram of the total number of steps taken each day and calculate and report the mean and median total number of steps taken per day. 
+
+* Do these values differ from the estimates from the first part of the assignment? 
+
+* What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+### 4.2. Procedure
+
+#### 4.2.1. Objective 1: Total number of missing values (NA) in the original data set
+```{r}
+nrow(subset(activity, is.na(activity$steps)))
+```
+
+#### 4.2.2. Objective 2 and 3: Input the missing values strategy and create a new complete data set
+The average of each 5-minute interval values from the previous section is used to replace the NA values of the original data and a new dataset is generated. Decimal values will be rounded up to a whole number to avoid using fractional steps.
+```{r}
+#Assign all the values of `steps` from the original data set to a variable
+stepValues <- data.frame(activity$steps)   
+#Assign the values of the averaged steps (rounded up to an integer) to the missing values 
+#of the new variable
+stepValues[is.na(stepValues),] <- ceiling(tapply(
+                        X=activity$steps,INDEX=activity$interval,FUN=mean,na.rm=TRUE))   
+#Attach the new variable column to the new dataframe replacing the original steps column
+newData <- cbind(stepValues, activity[,2:5])   
+colnames(newData) <- c("Steps", "Date", "Interval", "Time", "Weekday")
+```
+
+Let's have a look at the new complete data set:
+```{r}
+str(newData)
+summary(newData)
+data.table(newData)
+```
+
+#### 4.2.3. Objective 4: Calculate new mean and median number of steps and make a histogram to display processed data.
+
+##### 4.2.3.1 Calculate the total number of steps per day with complete data and assign it to an object
+```{r}
+#Compute the total number of steps per day
+newDailyStepSum <- aggregate(newData$Steps, list(newData$Date), sum) 
+colnames(newDailyStepSum) <- c("Date", "Steps")
+```
+The new total number of steps per day are the following:
+```{r}
+head(newDailyStepSum)
+tail(newDailyStepSum)
+``` 
+
+##### 4.2.3.2 Calculate the summary statistics of the new total number of steps taken per day
+```{r}
+# Calculate summary statistics
+summary(newDailyStepSum)
+```
+
+##### 4.2.3.3 histograms to view the new data
+
+```{r fig.width=15, fig.height=10, echo=TRUE }
+with(newDailyStepSum, {       
+        
+        #Setup plotting space.
+        par(mfrow=c(2,1),mar=c(6.75,6.75,0.75,0), mgp=c(5.75,0.75,0), las=2)
+        
+        barplot( #plot total steps per day
+                height=Steps,
+                main="Figure 3a.: Total Steps taken each Day (w/o missing values)",
+                ylab="Steps per Day",
+                names.arg=newDailyStepSum$Date,
+                col="steelblue",
+                space=c(0)
+        )  
+        par(mar=c(6.75,6.75,3,0), mgp=c(5.5,2,0),las=1)
+        
+        hist(  #plot the distribution of total steps
+                x = Steps,
+                xlim=c(0,25000),
+                ylim=c(0, 0.0002),
+                prob=TRUE,
+                main = "Figure 3b.: Density Distribution of Total Steps per Day (w/o missing values)", 
+                xlab= "Count of Total Steps per Day", 
+                col="steelblue", 
+                breaks = 30
+        )
+        
+        #Assign mean and median values to variables to be used in the plot
+        new.mean.steps <- mean(newDailyStepSum$Steps, na.rm = TRUE) # Mean
+        new.median.steps <- quantile(x = newDailyStepSum$Steps, probs = 0.5) # Median, 50%Q
+       
+        # Add median and mean lines and their legends
+        abline(v=new.median.steps, col="lawngreen", lwd=6)
+        abline(v=new.mean.steps, lty = 2, col="red", lwd=3)
+        legend("topright", 
+               c("Median","Mean"),
+               pch=c(16,16), 
+               col=c("lawngreen","red"),
+               cex=1.5
+               )
+
+        #Add rug
+        rug(newDailyStepSum$Steps)
+        
+        #Add values of mean, sd and median
+        mtext(paste(
+                "mean ", round(mean(newDailyStepSum$Steps),0), 
+                "; sd ", round(sd(newDailyStepSum$Steps),1), 
+                "; median ", quantile(x = newDailyStepSum$Steps, probs = 0.5),
+                sep=""), 
+                side=1, 
+                cex=.75)
+        
+        #Add a normal distribution line
+        x <- newDailyStepSum$Steps 
+        curve(dnorm(x,
+                    mean=mean(newDailyStepSum$Steps), 
+                    sd=sd(newDailyStepSum$Steps)
+                    ),
+              add=TRUE,
+              col="black", 
+              lty="dotted", 
+              xaxt="n")
+
+})
+
+```
+
+**Objective 4**: Both the values of the `mean` and the `median` have increased slightly with the new complete data set. The `mean` went from **10766 to 10785 steps** and the `median` went from **10765 to 10909 steps**. This shift in values did not profoundly affect the `normal distribution` with regards to the variability of the number of daily steps taken in this period of `61 days` as can be seen in **Figure 3b**.
 
 
+##5. Question 3: Are there differences in activity patterns between weekdays and weekends?
 
-## Imputing missing values
+### 5.1. Objectives
+For this part the `weekdays()` function may be of some help here. Use the dataset with the filled-in missing values for this part.
+
+1. Create a new factor variable in the dataset with two levels “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+2. Make a panel plot containing a time series plot (i.e. `type = "l"`) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the [GitHub repository](http://github.com/rdpeng/RepData_PeerAssessment1) to see an example of what this plot should look like using simulated data.
+
+###5.2. Insert new column for Weekend and Weekday
+**Objective 1**: A new column indicating whether the date is a weekday or a weekend is added to the new dataset created in the previous section.
+```{r}
+dateDayType <- data.frame(sapply(X=newData$Date, FUN=function(day) { 
+        
+        if (weekdays(as.Date(day)) %in% c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")) 
+                { day <- "weekday" 
+                  } else { 
+                          day <- "weekend" } }))
 
 
+newDataWithDayType <- cbind(newData, dateDayType)
+colnames(newDataWithDayType) <- c("steps", "date", "tnterval","time", "weekday", "dayType") 
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+Bellow is an overview of the data set:
+```{r}
+str(newDataWithDayType)
+data.table(newDataWithDayType)
+```
+
+The data is then separated into weekday or weekend and the average number of steps taken for each 5-minute interval, itself averaged across all weekday days or weekend days is calculated.
+```{r}    
+dayTypeTimeSteps <- aggregate(data=newDataWithDayType, steps ~ dayType + time ,FUN=mean) 
+```
+A sample of this dataset is as follows:
+```{r}
+data.table(dayTypeTimeSteps)
+class(dayTypeTimeSteps$time)
+```
+
+###5.3. Panel plot comparing the activity patern netween weekdays and weekend days at a 95% confidence interval
+**Objective 2**: Finally, a panel plot of both weekend and weekday graphs is generated.
+```{r fig.width=15, fig.height=10, echo=TRUE }
+# Plot the average steps per interval separating weekdays and weekend days
+steps.period %+% newDataWithDayType + facet_grid(dayType~., margins = TRUE) +
+  labs(title= "Figure 4.: Average of steps taken each interval across the days, given the part of the week  \n  (Blue line represets the average step taken and the grey shaded area the 95% confidence interval)")
+```
+
+```{r}
+tapply(newDataWithDayType$steps,newDataWithDayType$dayType,
+       function (x) { c(MINIMUM=min(x), MEAN=mean(x), MEDIAN=median(x),
+                        STD.DEV=sd(x), MAXIMUM=max(x))})
+```
+
+##6. Discussion
+
+This analysis is able to draw substantial information abou the subject's activity patern. The figure 4 summarizes well the subject's day to day routine. We can almost be certain that the subject is as home between around 9 PM and 6 PM every day given the nearly uniform lack of activity during this period. The subject either spleeps early everyday or removes the activity monitor while at home.
+
+Its is also possible to estimate the time the subject wakes up in the morning. During weekdays there is a lot of activity between 5:30 and 8:00 AM. This is most likely attributed to the subject getting ready to go to work or starting their day. On the weekends the subject most likely wakes up later as the movement in this period is less frequent.
+
+The subjects activity peak is at around 8:30AM in the weekdays. This could be attributed to the subject walking to work. In the weekends this behaviour is also observed, however with a double peak, which sujests that the subject could have the habit of going out for breakfast or visting someone for a short period or pick someone up in the morning. 
+
+During the weekdays there is little activity between 10:00 and 11:30 AM and good part of the afternoon which suggests that the subject is at work and probably has a desk job which requires minimal movement. At 10 AM in the weekend, on the other hand, there is considerable activity which could be attibuted to some routine habit such as going to the grocery store. Also in weekends there is a great deal of activity variability throughout the day wich sugest a busy social lifestyle. 
+
+
+##7. Information about the analysis environment
+
+Follows information on the R session used for this analysis.
+```{r}
+# Record R session info
+si <- sessionInfo()
+
+# Print info
+si
+```
