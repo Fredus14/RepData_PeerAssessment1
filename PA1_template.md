@@ -90,14 +90,6 @@ summary(activity)
 
 ```r
 library(data.table)
-```
-
-```
-## data.table 1.9.4  For help type: ?data.table
-## *** NB: by=.EACHI is now explicit. See README to restore previous behaviour.
-```
-
-```r
 data.table(activity)
 ```
 
@@ -237,18 +229,6 @@ The `date` variable was converted to `POSIXct` `POSIXt`.
 
 ```r
 library(lubridate)
-```
-
-```
-## 
-## Attaching package: 'lubridate'
-## 
-## The following objects are masked from 'package:data.table':
-## 
-##     hour, mday, month, quarter, wday, week, yday, year
-```
-
-```r
 #The lubridate ymd function formats the date aproprietly
 activity$date <- ymd(activity$date)
 class(activity$date)
@@ -941,7 +921,7 @@ si
 ## loaded via a namespace (and not attached):
 ##  [1] chron_2.3-45     colorspace_1.2-4 digest_0.6.4     evaluate_0.5.5  
 ##  [5] formatR_1.0      grid_3.1.1       gtable_0.1.2     labeling_0.3    
-##  [9] MASS_7.3-35      memoise_0.2.1    munsell_0.4.2    plyr_1.8.1      
-## [13] proto_0.3-10     Rcpp_0.11.3      reshape2_1.4     stringr_0.6.2   
-## [17] tools_3.1.1
+##  [9] markdown_0.7.4   MASS_7.3-35      memoise_0.2.1    mime_0.2        
+## [13] munsell_0.4.2    plyr_1.8.1       proto_0.3-10     Rcpp_0.11.3     
+## [17] reshape2_1.4     stringr_0.6.2    tools_3.1.1      yaml_2.1.13
 ```
